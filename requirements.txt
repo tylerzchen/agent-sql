@@ -1,0 +1,6 @@
+aws-cdk-lib==2.206.0
+constructs>=10.0.0,<11.0.0
+mcp>=1.0.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.0.0
