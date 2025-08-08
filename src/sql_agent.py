@@ -44,7 +44,7 @@ def generate_sql(bedrock_agent, user_query: str) -> tuple[str, str]:
 
     if '<sql_statement>' in text_response:
         start = text_response.find('<sql_statement>') + len('<sql_statement>')
-        end = text_response.find('<sql_statement>')
+        end = text_response.find('</sql_statement>')
         if end != -1:
             sql_query = text_response[start:end].strip()
     else:
@@ -65,11 +65,13 @@ def validate_sql(sql_query: str) -> tuple[bool, str]:
         
         statement = parsed[0]
         tokens = statement.tokens
+        found_select = False
         for token in tokens:
-            if token.ttype is Keyword and token.value.upper() == 'SELECT':
+            if (token.ttype is Keyword or str(token.ttype).startswith('Token.Keyword')) and token.value.upper() == 'SELECT':
+                found_select = True
                 break
-            else:
-                return False, "Only SELECT queries are allowed for security"
+        if not found_select:
+            return False, "Only SELECT queries are allowed for security"
         
         forbidden_keywords = [
             'DROP', 'DELETE', 'TRUNCATE', 'ALTER', 'CREATE', 'INSERT', 
@@ -79,7 +81,7 @@ def validate_sql(sql_query: str) -> tuple[bool, str]:
         for keyword in forbidden_keywords:
             if keyword in sql_upper:
                 return False, f"Forbidden SQL operation detected: {keyword}"
-
+        
         dangerous_patterns = [
             ';--', ';/*', 'UNION', 'INFORMATION_SCHEMA', 
             'pg_catalog', 'pg_stat', 'DROP', 'CREATE'
@@ -94,6 +96,8 @@ def validate_sql(sql_query: str) -> tuple[bool, str]:
                 return False, "SQL query is empty after formatting"
         except Exception as e:
             return False, f"SQL syntax error: {str(e)}"
+        
+        return True, None
     except Exception as e:
         return False, f"SQL validation error: {str(e)}"
 
