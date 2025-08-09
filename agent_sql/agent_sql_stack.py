@@ -63,12 +63,14 @@ class AgentSqlStack(Stack):
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
             ),
-            writer=rds.ClusterInstance.provisioned("writer"),
+            writer=rds.ClusterInstance.serverless_v2("writer"),
             serverless_v2_min_capacity=0.5,
             serverless_v2_max_capacity=10,
             storage_encrypted=True,
             backup=rds.BackupProps(retention=Duration.days(7)),
-            deletion_protection=True,
+            deletion_protection=False,
+            security_groups=[aurora_security_group],
+            enable_data_api=True
         )
 
         # RDS proxy initialization
@@ -81,53 +83,11 @@ class AgentSqlStack(Stack):
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
-            security_groups=[],
+            security_groups=[rds_proxy_security_group],
             db_proxy_name="agent-sql-proxy",
             require_tls=True,
             idle_client_timeout=Duration.minutes(30),
             max_connections_percent=100,
             max_idle_connections_percent=50,
             debug_logging=False
-        )
-
-        CfnOutput(
-            self,
-            "AuroraClusterEndpoint",
-            value=cluster.cluster_endpoint.hostname,
-            description="Aurora cluster endpoint"
-        )
-        
-        CfnOutput(
-            self,
-            "RDSProxyEndpoint", 
-            value=proxy.endpoint,
-            description="RDS Proxy endpoint"
-        )
-
-        CfnOutput(
-            self,
-            "DatabaseSecretArn",
-            value=cluster.secret.secret_arn,
-            description="Database credentials secret ARN"
-        )
-        
-        CfnOutput(
-            self,
-            "VpcId",
-            value=vpc.vpc_id,
-            description="VPC ID for Lambda deployment"
-        )
-        
-        CfnOutput(
-            self,
-            "LambdaSecurityGroupId",
-            value=lambda_security_group.security_group_id,
-            description="Security group ID for Lambda functions"
-        )
-
-        CfnOutput(
-            self,
-            "PrivateSubnetIds",
-            value=",".join([subnet.subnet_id for subnet in vpc.private_subnets]),
-            description="Private subnet IDs for Lambda deployment"
         )

@@ -1,8 +1,17 @@
+import os
 import logging
 import json
 from mcp.server.fastmcp import FastMCP
+from dotenv import load_dotenv
 
 from sql_agent import SQLAgent
+from rds_client import RDSClient
+
+load_dotenv()
+
+CLUSTER_ARN = os.getenv("AURORA_CLUSTER_ARN")
+SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
+DB_NAME = os.getenv("DATABASE_NAME")
 
 """
 test_queries = [
