@@ -72,3 +72,9 @@ Table: Message Types
 id	-- SMALLINT -- Primary key
 name --	TEXT --	Type name (note, reply, forward, ai)
 '''
+
+def main():
+    return
+
+if __name__ == "__main__":
+    main()

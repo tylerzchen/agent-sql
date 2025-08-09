@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS messages (
     
     -- Channel and metadata
     channel TEXT NOT NULL CHECK (channel IN ('email', 'web_form', 'phone', 'ai', 'sms', 'api')), -- How message was sent
-    is_public BOOLEAN NOT NULL DEFAULT true, -- False for internal notes, true for customer-visible messages
+    is_public BOOLEAN NOT NULL DEFAULT true, -- False if internal notes, true if customer-visible messages
     
     -- Email-specific fields
     message_id TEXT, -- Email Message-ID header for threading

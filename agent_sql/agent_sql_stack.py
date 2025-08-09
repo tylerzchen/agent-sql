@@ -36,6 +36,21 @@ class AgentSqlStack(Stack):
                 )
             ]
         )
+
+        # Security group for Aurora Serverless v2
+        aurora_security_group = ec2.SecurityGroup(self, "AuroraSecurityGroup", vpc=vpc, allow_all_outbound=False)
+
+        # Security group for RDS proxy
+        rds_proxy_security_group = ec2.SecurityGroup(self, "RDSProxySecurityGroup", vpc=vpc, allow_all_outbound=False)
+
+        # Security group for Lambda function
+        lambda_security_group = ec2.SecurityGroup(self, "LambdaSecurityGroup", vpc=vpc, allow_all_outbound=True)
+
+        # Security group rules: Lambda -> RDS proxy
+        rds_proxy_security_group.add_ingress_rule(peer=lambda_security_group, connection=ec2.Port.tcp(5432))
+
+        # Security group rules: RDS proxy -> Aurora Serverless v2
+        aurora_security_group.add_ingress_rule(peer=rds_proxy_security_group, connection=ec2.Port.tcp(5432))
         
         # Aurora Serverless v2 initialization
         cluster = rds.DatabaseCluster(
@@ -56,4 +71,63 @@ class AgentSqlStack(Stack):
             deletion_protection=True,
         )
 
-        # TODO: Add security groups and RDS proxy to instance/vpc
+        # RDS proxy initialization
+        proxy = rds.DatabaseProxy(
+            self,
+            "AgentSQLProxy",
+            proxy_target=rds.ProxyTarget.from_cluster(cluster),
+            secrets=[cluster.secret],
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            security_groups=[],
+            db_proxy_name="agent-sql-proxy",
+            require_tls=True,
+            idle_client_timeout=Duration.minutes(30),
+            max_connections_percent=100,
+            max_idle_connections_percent=50,
+            debug_logging=False
+        )
+
+        CfnOutput(
+            self,
+            "AuroraClusterEndpoint",
+            value=cluster.cluster_endpoint.hostname,
+            description="Aurora cluster endpoint"
+        )
+        
+        CfnOutput(
+            self,
+            "RDSProxyEndpoint", 
+            value=proxy.endpoint,
+            description="RDS Proxy endpoint"
+        )
+
+        CfnOutput(
+            self,
+            "DatabaseSecretArn",
+            value=cluster.secret.secret_arn,
+            description="Database credentials secret ARN"
+        )
+        
+        CfnOutput(
+            self,
+            "VpcId",
+            value=vpc.vpc_id,
+            description="VPC ID for Lambda deployment"
+        )
+        
+        CfnOutput(
+            self,
+            "LambdaSecurityGroupId",
+            value=lambda_security_group.security_group_id,
+            description="Security group ID for Lambda functions"
+        )
+
+        CfnOutput(
+            self,
+            "PrivateSubnetIds",
+            value=",".join([subnet.subnet_id for subnet in vpc.private_subnets]),
+            description="Private subnet IDs for Lambda deployment"
+        )
