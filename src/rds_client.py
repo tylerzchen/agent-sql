@@ -37,16 +37,17 @@ class RDSClient:
                 formatRecordsAs='JSON'
             )
             formatted_records = response.get('formattedRecords', [])
-            parsed_records = self.parse_records(formatted_records)
-            columns = []
-            if parsed_records:
-                columns = list(parsed_records[0].keys())
+            try:
+                parsed_data = json.loads(formatted_records)
+            except json.JSONDecodeError as error:
+                logger.error(f"Failed to parse JSON: {error}")
+                parsed_data = []
 
             return {
                 "success": True,
-                "data": parsed_records,
-                "row_count": len(parsed_records),
-                "columns": columns,
+                "data": parsed_data,
+                "row_count": len(parsed_data),
+                "columns": list(parsed_data[0].keys()) if parsed_data else [],
                 "sql_query": sql_query
             }
         except ClientError as error:
@@ -66,18 +67,6 @@ class RDSClient:
                 "success": False,
                 "error": f"Unknown error: {str(error)}"
             }
-
-    def parse_records(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        parsed_records = []
-        for record in records:
-            try:
-                parsed_record = json.loads(record)
-                parsed_records.append(parsed_record)
-            except json.JSONDecodeError as error:
-                logger.warning(f"Failed to parse record: {error}")
-                parsed_records.append({ "raw_data": record })
-        
-        return parsed_records
     
     def test_connection(self) -> tuple[bool, str]:
         try:
@@ -98,25 +87,3 @@ class RDSClient:
         except Exception as error:
             logger.error(f"Error connecting to RDS: {str(error)}")
             return False, f"Error connecting: {str(error)}"
-
-def main():
-    rds_client = RDSClient(
-        cluster_arn=CLUSTER_ARN,
-        secret_arn=SECRET_ARN,
-        db_name=DB_NAME,
-        region="us-east-1"
-    )
-    success, error = rds_client.test_connection()
-    if success:
-        logger.info("Connection successful")
-        sample_query = ""
-        result = rds_client.execute_query(sample_query)
-        if result["success"]:
-            logger.info(f"Query successful. {result}")
-        else:
-            logger.error(f"Query failed: {result['error']}")
-    else:
-        logger.error(f"Connection failed: {error}")
-
-if __name__ == "__main__":
-    main()

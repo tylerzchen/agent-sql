@@ -28,7 +28,7 @@ class SQLAgent:
         
     def generate_sql(self, user_query: str) -> tuple[str, str]:
         current_time = time.time()
-        if current_time - self.last_request_time < self.min_request.interval:
+        if current_time - self.last_request_time < self.min_request_interval:
             time.sleep(self.min_request_interval)
         self.last_request_time = time.time()
         
@@ -52,7 +52,7 @@ class SQLAgent:
             )
         except (ClientError, Exception) as error:
             logger.error(f"ERROR: Can't invoke '{self.model_id}'. Reason: {error}")
-            return
+            return None, f"Error invoking model: {error}"
 
         decoded_response = json.loads(response["body"].read())
         text_response = decoded_response["content"][0]["text"]

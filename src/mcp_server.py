@@ -15,16 +15,16 @@ DB_NAME = os.getenv("DATABASE_NAME")
 
 """
 test_queries = [
-    "Show all tickets marked as cases that are overdue and still unresolved.",
-    "List all agents who have responded to at least one ticket in the last 30 days.",
-    "How many tickets have been created via the AI channel in the last week?",
-    "Get the average time to first response for resolved tickets.",
-    "Find the 5 most recent internal notes added to tickets.",
-    "List all tickets tagged with 'urgent' and their current status.",
-    "Show all message types and how many messages fall under each type.",
-    "Find all categories with more than 10 active tickets.",
-    "Get the subject and body of the first message in each ticket.",
-    "How many tickets are assigned to agents versus unassigned?"
+    “Show all ACME tickets that are High priority and currently in an open status”
+    “For each organization, give me the count of tickets by status name”
+    “List tickets resolved in the last 7 days.”
+    “Which tickets are due in the next 3 days and not closed?”
+    “Show all tickets marked as special cases”
+    “For Globex, list each ticket with the count of public vs. internal messages”
+    “Find tickets whose tags include either API or SMS”
+    “Show ticket counts per agent across all organizations, including agents with zero tickets. Sort by count descending, then agent name.”
+    “Return all tickets where custom_fields.org = 'initech' and the seq value is between 1 and 5”
+    “Give me the last 10 public messages across all orgs, with ticket number, message type, and whether the author is an agent or a user.”
 ]
 """
 
@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("sql-agent")
 sql_agent = SQLAgent()
+rds_client = RDSClient(
+    cluster_arn=CLUSTER_ARN,
+    secret_arn=SECRET_ARN,
+    db_name=DB_NAME
+)
 
 @mcp.tool()
 async def query_sql_agent(user_query: str) -> str:
@@ -60,13 +65,42 @@ async def query_sql_agent(user_query: str) -> str:
             }, indent=2)
         
         logger.info(f"Generated SQL query: {sql_query}")
+        
+        connection_success, error = rds_client.test_connection()
+        if not connection_success:
+            logger.error(f"Error connecting to RDS: {error}")
+            return json.dumps({
+                "success": False,
+                "error": f"Error connecting to the database: {error}",
+                "user_query": user_query,
+                "generated_sql": sql_query,
+                "data": None,
+                "row_count": 0,
+                "columns": []
+            })
+        
+        result = rds_client.execute_query(sql_query)
+        if not result['success']:
+            logger.error(f"Database query failed: {result['error']}")
+            return json.dumps({
+                "success": False,
+                "error": f"Database query failed: {result['error']}",
+                "user_query": user_query,
+                "generated_sql": sql_query,
+                "data": None,
+                "row_count": 0,
+                "columns": []
+            })
+        
         return json.dumps({
             "success": True,
             "user_query": user_query,
             "generated_sql": sql_query,
             "validation_passed": True,
-            "note": "SQL query generated and validated. Ready for database execution." # remove this later, once RDS instance is connected
-        })
+            "data": result['data'],
+            "row_count": result['row_count'],
+            "columns": result['columns'],
+        }, indent=2, default=str)
     except Exception as error:
         logger.error(f"Unknown error: {str(error)}")
         return json.dumps({
