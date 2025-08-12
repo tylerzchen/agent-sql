@@ -1,3 +1,4 @@
+import os
 from aws_cdk import (
     Duration,
     Stack,
@@ -98,14 +99,15 @@ class AgentSqlStack(Stack):
         mcp_lambda = lambda_.DockerImageFunction(
             self,
             "AgentSQLMCPServer",
-            code=lambda_.DockerImageCode.from_image_asset("."),
+            code=lambda_.DockerImageCode.from_image_asset(
+                os.path.join(os.path.dirname(__file__), "..")
+            ),
             timeout=Duration.seconds(60),
             memory_size=1024,
             environment={
-                "CLUSTER_ARN": cluster.cluster_arn,
-                "SECRET_ARN": cluster.secret.secret_arn,
+                "AURORA_CLUSTER_ARN": cluster.cluster_arn,
+                "AURORA_SECRET_ARN": cluster.secret.secret_arn,
                 "DATABASE_NAME": "postgres",
-                "REGION": Stack.of(self).region,
             },
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(

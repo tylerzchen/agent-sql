@@ -2,7 +2,7 @@
   "mcpServers": {
     "sql-agent": {
       "command": "http",
-      "args": ["https://your-api-gateway-url.amazonaws.com/prod/"],
+      "args": ["https://lu9a0ud570.execute-api.us-east-1.amazonaws.com/prod/"],
       "cwd": null
     }
   }

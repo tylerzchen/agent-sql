@@ -1,8 +1,8 @@
 import logging
-import json
 import uvicorn
+import json
 from datetime import datetime
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -145,7 +145,7 @@ async def call_tool(request: ToolCall):
         return {
             "jsonrpc": "2.0",
             "id": request.id,
-            "result": result
+            "result": json.loads(result) if isinstance(result, str) else result
         }
     except Exception as error:
         logger.error(f"Error calling tool: {str(error)}")
