@@ -6,6 +6,8 @@ from aws_cdk import (
 from constructs import Construct
 import aws_cdk.aws_rds as rds
 import aws_cdk.aws_ec2 as ec2
+import aws_cdk.aws_lambda as lambda_
+import aws_cdk.aws_apigateway as apigw
 
 class AgentSqlStack(Stack):
 

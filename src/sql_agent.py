@@ -2,7 +2,6 @@ import logging
 import json
 import re
 import boto3
-import time
 from botocore.exceptions import ClientError
 import sqlparse
 from sqlparse.tokens import Keyword
@@ -16,22 +15,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# TODO: Add provisioning throughput so Claude Sonnet 4 works
-# TODO: Add error handling, if invalid SQL, run the model again with an error prompt
 class SQLAgent:
     def __init__(self, model_id: str = "anthropic.claude-3-5-sonnet-20240620-v1:0", region: str = "us-east-1"):
         self.model_id = model_id
         self.region = region
         self.bedrock_agent = boto3.client(service_name='bedrock-runtime', region_name=region)
-        self.last_request_time = 0
-        self.min_request_interval = 5.0
         
-    def generate_sql(self, user_query: str) -> tuple[str, str]:
-        current_time = time.time()
-        if current_time - self.last_request_time < self.min_request_interval:
-            time.sleep(self.min_request_interval)
-        self.last_request_time = time.time()
-        
+    def generate_sql(self, user_query: str) -> tuple[str, str]:  
         system_prompt = create_system_prompt(user_query=user_query)
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",

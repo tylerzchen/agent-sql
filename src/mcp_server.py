@@ -4,6 +4,7 @@ import json
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
 
+from prompt import create_system_prompt
 from sql_agent import SQLAgent
 from rds_client import RDSClient
 
@@ -12,21 +13,6 @@ load_dotenv()
 CLUSTER_ARN = os.getenv("AURORA_CLUSTER_ARN")
 SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
 DB_NAME = os.getenv("DATABASE_NAME")
-
-"""
-test_queries = [
-    “Show all ACME tickets that are High priority and currently in an open status”
-    “For each organization, give me the count of tickets by status name”
-    “List tickets resolved in the last 7 days.”
-    “Which tickets are due in the next 3 days and not closed?”
-    “Show all tickets marked as special cases”
-    “For Globex, list each ticket with the count of public vs. internal messages”
-    “Find tickets whose tags include either API or SMS”
-    “Show ticket counts per agent across all organizations, including agents with zero tickets. Sort by count descending, then agent name.”
-    “Return all tickets where custom_fields.org = 'initech' and the seq value is between 1 and 5”
-    “Give me the last 10 public messages across all orgs, with ticket number, message type, and whether the author is an agent or a user.”
-]
-"""
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,11 +23,31 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("sql-agent")
 sql_agent = SQLAgent()
-rds_client = RDSClient(
-    cluster_arn=CLUSTER_ARN,
-    secret_arn=SECRET_ARN,
-    db_name=DB_NAME
-)
+
+connection_success, connection_error = None, None
+try:
+    rds_client = RDSClient(cluster_arn=CLUSTER_ARN, secret_arn=SECRET_ARN, db_name=DB_NAME)
+    connection_success, connection_error = rds_client.test_connection()
+    if not connection_success:
+        logger.error(f"Failed to connect to RDS: {connection_error}")
+    else:
+        logger.info("Connection to RDS successful")
+except Exception as error:
+    connection_success = False
+    connection_error = f"Failed to connect to RDS: {str(error)}"
+    logger.error(f"Failed to connect to RDS: {connection_error}")
+
+@mcp.prompt("Generate SQL Query")
+async def generate_sql_query(user_query: str) -> str:
+    """Convert a natural language query into a valid SQL query to be executed on the database.
+
+    This prompt is used to help Claude generate SQL queries baesd on the user's query and
+    the database schema. Use this when you need to convert a natural language query into SQL.
+
+    Args:
+        user_query: the natural language query about the database (e.g., "Show me all tickets that are overdue and still unresolved")
+    """
+    return create_system_prompt(user_query=user_query)
 
 @mcp.tool()
 async def query_sql_agent(user_query: str) -> str:
@@ -49,35 +55,84 @@ async def query_sql_agent(user_query: str) -> str:
 
     This tool is used to convert a natural language query related to the following
     database tables -- tickets, ticket categories, ticket priorities, ticket statuses, 
-    messages, message types -- into a secure and validated PostgreSQL SELECT query.
+    messages, message types -- into a secure and validated PostgreSQL SELECT query,
+    then execute the query on the database and return the results.
+
+    IMPORTANT:
+    First call generate_sql_query to get the system prompt, then use that prompt to 
+    generate the SQL query, then call the execute_sql_query tool to execute the query
+    on the database and return the results.
     
     Args:
         user_query: the natural language query about the database (e.g., "Show me all tickets that are overdue and still unresolved")
     """
+    if not connection_success:
+        logger.error(f"Database connection not available: {connection_error}")
+        return json.dumps({
+            "success": False,
+            "error": f"Database service unavailable: {connection_error}",
+            "user_query": user_query,
+            "retry_advice": "The database service is currently unavailable. Please try again later.",
+            "error_type": "connection_error"
+        }, indent=2)
+    
     try:
-        sql_query, error = sql_agent.generate_sql(user_query)
-        if error:
-            logger.error(f"Error generating SQL query: {error}")
+        system_prompt = create_system_prompt(user_query=user_query)
+        return json.dumps({
+            "success": True,
+            "message": "Please use the following prompt to generate SQL, then call execute_sql_query with the result:",
+            "system_prompt": system_prompt,
+            "next_step": "Call execute_sql_query with the generated SQL",
+            "user_query": user_query,
+            "instructions": [
+                "1. Use the system_prompt above to generate valid SQL",
+                "2. Extract the SQL from the <sql_statement> tags",
+                "3. Call execute_sql_query with the generated SQL and user_query"
+            ]
+        }, indent=2)
+    except Exception as error:
+        logger.error(f"Unknown error: {str(error)}")
+        return json.dumps({
+            "success": False,
+            "error": str(error),
+            "user_query": user_query,
+            "generated_sql": None
+        }, indent=2)
+
+@mcp.tool()
+async def execute_sql_query(sql_query: str, user_query: str = "") -> str:
+    """Execute a SQL query on the database and return the results.
+
+    This tool is used to execute pre-generated SQL queries on the database.
+    The SQL query should be generated by Claude using the generate_sql_query prompt,
+    based on the database schema and the user's query.
+
+    Args:
+        sql_query: the SQL query to execute on the database
+        user_query: the original natural language query that generated the SQL query for context (optional)
+    """
+    if not connection_success:
+        logger.error(f"Database connection not available: {connection_error}")
+        return json.dumps({
+            "success": False,
+            "error": f"Database service unavailable: {connection_error}",
+            "sql_query": sql_query,
+            "user_query": user_query,
+            "retry_advice": "The database service is currently unavailable. Please try again later.",
+            "error_type": "connection_error"
+        }, indent=2)
+
+    try:
+        is_valid, error = sql_agent.validate_sql(sql_query)
+        if not is_valid:
+            logger.error(f"Invalid SQL query: {error}")
             return json.dumps({
                 "success": False,
-                "error": error,
-                "user_query": user_query
-            }, indent=2)
-        
-        logger.info(f"Generated SQL query: {sql_query}")
-        
-        connection_success, error = rds_client.test_connection()
-        if not connection_success:
-            logger.error(f"Error connecting to RDS: {error}")
-            return json.dumps({
-                "success": False,
-                "error": f"Error connecting to the database: {error}",
+                "error": f"Invalid SQL query: {error}",
                 "user_query": user_query,
                 "generated_sql": sql_query,
-                "data": None,
-                "row_count": 0,
-                "columns": []
-            })
+                "error_type": "security_error"
+            }, indent=2)
         
         result = rds_client.execute_query(sql_query)
         if not result['success']:
@@ -89,8 +144,9 @@ async def query_sql_agent(user_query: str) -> str:
                 "generated_sql": sql_query,
                 "data": None,
                 "row_count": 0,
-                "columns": []
-            })
+                "columns": [],
+                "error_type": "database_error"
+            }, indent=2)
         
         return json.dumps({
             "success": True,
@@ -102,12 +158,14 @@ async def query_sql_agent(user_query: str) -> str:
             "columns": result['columns'],
         }, indent=2, default=str)
     except Exception as error:
-        logger.error(f"Unknown error: {str(error)}")
+        logger.error(f"Unexpected error in execute_sql_query: {str(error)}")
         return json.dumps({
             "success": False,
-            "error": str(error),
+            "error": f"Unexpected error: {str(error)}",
             "user_query": user_query,
-            "generated_sql": None
+            "generated_sql": sql_query,
+            "retry_advice": "Please try again later.",
+            "error_type": "unexpected_error"
         }, indent=2)
 
 if __name__ == "__main__":

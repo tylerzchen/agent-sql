@@ -3,14 +3,7 @@ import json
 import logging
 import boto3
 from botocore.exceptions import ClientError
-from typing import Dict, Any, List
-from dotenv import load_dotenv
-
-load_dotenv()
-
-CLUSTER_ARN = os.getenv("AURORA_CLUSTER_ARN")
-SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
-DB_NAME = os.getenv("DATABASE_NAME")
+from typing import Dict, Any
 
 logging.basicConfig(
     level=logging.INFO,
