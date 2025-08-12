@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sql-agent": {
+      "command": "http",
+      "args": ["https://your-api-gateway-url.amazonaws.com/prod/"],
+      "cwd": null
+    }
+  }
+}

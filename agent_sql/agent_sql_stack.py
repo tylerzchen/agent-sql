@@ -93,3 +93,52 @@ class AgentSqlStack(Stack):
             max_idle_connections_percent=50,
             debug_logging=False
         )
+
+        # Lambda function for MCP server
+        mcp_lambda = lambda_.DockerImageFunction(
+            self,
+            "AgentSQLMCPServer",
+            code=lambda_.DockerImageCode.from_image_asset("."),
+            timeout=Duration.seconds(60),
+            memory_size=1024,
+            environment={
+                "CLUSTER_ARN": cluster.cluster_arn,
+                "SECRET_ARN": cluster.secret.secret_arn,
+                "DATABASE_NAME": "postgres",
+                "REGION": Stack.of(self).region,
+            },
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            security_groups=[lambda_security_group, rds_proxy_security_group]
+        )
+
+        cluster.grant_data_api_access(mcp_lambda)
+
+        # API gateway for MCP server
+        api = apigw.RestApi(
+            self,
+            "MCPApiGateway",
+            rest_api_name="Agent SQL MCP API",
+            description="API Gateway for SQL Agent MCP Lambda function",
+            default_cors_preflight_options=apigw.CorsOptions(
+                allow_origins=["*"],
+                allow_methods=["POST", "GET", "OPTIONS"],
+                allow_headers=["*"],
+                max_age=Duration.seconds(300)
+            )
+        )
+
+        # Lambda function integration with API gateway
+        mcp_integration = apigw.LambdaIntegration(
+            mcp_lambda,
+            request_templates={
+                "application/json": '{ "statusCode": "200" }'
+            }
+        )
+
+        api.root.add_proxy(
+            default_integration=mcp_integration,
+            any_method=True
+        )
