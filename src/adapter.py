@@ -19,6 +19,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# HTTP web adapter (wrapper) for the MCP server
+# (allows for MCP client to connect to server over HTTP instead)
 app = FastAPI(
     title="SQL Agent MCP Web Adapter",
     description="HTTP adapter for MCP SQL Agent server",
@@ -33,18 +35,21 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+# Model for MCP tool call request
 class ToolCall(BaseModel):
     jsonrpc: str = "2.0"
     id: int
     method: str
     params: dict
 
+# Model for MCP prompt call request
 class PromptCall(BaseModel):
     jsonrpc: str = "2.0"
     id: int
     method: str
     params: dict
 
+# Root endpoint for the MCP server
 @app.get("/")
 async def root():
     return {
@@ -68,6 +73,7 @@ async def root():
         ]
     }
 
+# Health check endpoint for the MCP server
 @app.get("/health")
 async def health_check():
     return {
@@ -77,6 +83,7 @@ async def health_check():
         "timestamp": datetime.now().isoformat()
     }
 
+# List all MCP tools available
 @app.post("/tools/list")
 async def list_tools():
     return {
@@ -118,6 +125,7 @@ async def list_tools():
         ]
     }
 
+# Call a specific MCP tool by name and matching arguments
 @app.post("/tools/call")
 async def call_tool(request: ToolCall):
     try:
@@ -125,6 +133,7 @@ async def call_tool(request: ToolCall):
         tool_args = request.params.get("arguments", {})
         logger.info(f"Calling tool: {tool_name} with args: {tool_args}")
         
+        # Directly run the MCP tool functions here
         if tool_name == "query_sql_agent":
             result = await query_sql_agent(user_query=tool_args.get("user_query", ""))
         elif tool_name == "execute_sql_query":
@@ -142,6 +151,7 @@ async def call_tool(request: ToolCall):
                 }
             }
         
+        # Return the result of the MCP tool call
         return {
             "jsonrpc": "2.0",
             "id": request.id,
@@ -158,6 +168,7 @@ async def call_tool(request: ToolCall):
             }
         }
 
+# List all MCP prompts available
 @app.post("/prompts/list")
 async def list_prompts():
     return {
@@ -181,6 +192,7 @@ async def list_prompts():
         ]
     }
 
+# Call a specific MCP prompt by name and arguments
 @app.post("/prompts/call")
 async def call_prompt(request: PromptCall):
     try:
@@ -188,6 +200,7 @@ async def call_prompt(request: PromptCall):
         prompt_args = request.params.get("arguments", {})
         logger.info(f"Calling prompt: {prompt_name} with args: {prompt_args}")
         
+        # Generate the SQL query system prompt using the user's query
         if prompt_name == "generate_sql_query":
             result = await generate_sql_query(user_query=prompt_args.get("user_query", ""))
             return {
@@ -215,6 +228,7 @@ async def call_prompt(request: PromptCall):
             }
         }
 
+# Run the MCP server adapter on local machine over HTTP (localhost)
 if __name__ == "__main__":
     logger.info("Starting MCP server adapter...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

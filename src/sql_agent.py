@@ -15,13 +15,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Generates and validates SQL queries from a user's natural language query 
+# using a Bedrock agent and a custom prompt
 class SQLAgent:
     def __init__(self, model_id: str = "anthropic.claude-3-5-sonnet-20240620-v1:0", region: str = "us-east-1"):
         self.model_id = model_id
         self.region = region
         self.bedrock_agent = boto3.client(service_name='bedrock-runtime', region_name=region)
-        
-    def generate_sql(self, user_query: str) -> tuple[str, str]:  
+
+    # Generates SQL query from user's natural language query    
+    def generate_sql(self, user_query: str) -> tuple[str, str]:
+        # Create system prompt for the Bedrock agent using the user's query  
         system_prompt = create_system_prompt(user_query=user_query)
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
@@ -35,6 +39,7 @@ class SQLAgent:
             ],
         })
 
+        # Run the Bedrock agent using the prompt (Claude Sonnet 3.5)
         try:
             response = self.bedrock_agent.invoke_model(
                 modelId=self.model_id,
@@ -44,9 +49,11 @@ class SQLAgent:
             logger.error(f"ERROR: Can't invoke '{self.model_id}'. Reason: {error}")
             return None, f"Error invoking model: {error}"
 
+        # Decode the response from the Bedrock agent
         decoded_response = json.loads(response["body"].read())
         text_response = decoded_response["content"][0]["text"]
 
+        # Extract the SQL query from the response (contained in <sql_statement> tags)
         if '<sql_statement>' in text_response:
             start = text_response.find('<sql_statement>') + len('<sql_statement>')
             end = text_response.find('</sql_statement>')
@@ -55,18 +62,22 @@ class SQLAgent:
         else:
             sql_query = text_response.strip()
 
+        # Validate the SQL query
         is_valid, validation_error = self.validate_sql(sql_query)
         if not is_valid:
             return None, f"SQL validation failed: {validation_error}"
 
         return sql_query, None
 
+    # Validates the SQL query to ensure it is safe and follows SQL syntax
     def validate_sql(self, sql_query: str) -> tuple[bool, str]:
         try:
+            # Parse the SQL query from text
             parsed = sqlparse.parse(sql_query)
             if not parsed:
                 return False, "Empty or invalid SQL query"
             
+            # Check if the query is a SELECT statement
             statement = parsed[0]
             tokens = statement.tokens
             found_select = False
@@ -77,6 +88,7 @@ class SQLAgent:
             if not found_select:
                 return False, "Only SELECT queries are allowed for security"
             
+            # Check for forbidden SQL operations
             forbidden_patterns = [
                 r'\bCREATE\s+TABLE\b',
                 r'\bCREATE\s+DATABASE\b',  
@@ -89,6 +101,7 @@ class SQLAgent:
                 if re.search(pattern, sql_upper):
                     return False, f"Forbidden SQL operation detected: {pattern}"
             
+            # Check for dangerous SQL patterns
             dangerous_patterns = [
                 ';--', ';/*', 'UNION', 'INFORMATION_SCHEMA', 
                 'pg_catalog', 'pg_stat', 'DROP', 'CREATE'
@@ -97,6 +110,7 @@ class SQLAgent:
                 if pattern in sql_upper:
                     return False, f"Potentially dangerous SQL pattern detected: {pattern}"
 
+            # Format the SQL query to ensure it is valid
             try:
                 formatted = sqlparse.format(sql_query, reindent=True)
                 if not formatted.strip():

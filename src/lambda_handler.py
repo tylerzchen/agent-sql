@@ -6,8 +6,10 @@ from adapter import app
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Create a Lambda entry point for the FastAPI app (HTTP adapter for MCP server)
 handler = Mangum(app)
 
+# Lambda handler for the FastAPI app (HTTP adapter for MCP server)
 def lambda_handler(event, context):
     try:
         logger.info(f"Received event: {json.dumps(event)}")

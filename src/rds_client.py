@@ -11,6 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Connects to an Aurora RDS PostgreSQL instance and executes SQL queries using the Data API
 class RDSClient:
     def __init__(self, cluster_arn: str, secret_arn: str, db_name: str = "postgres", region: str = "us-east-1"):
         self.cluster_arn = cluster_arn
@@ -19,8 +20,10 @@ class RDSClient:
         self.region = region
         self.rds_client = boto3.client('rds-data', region_name=region)
     
+    # Executes a SQL query on the RDS instance
     def execute_query(self, sql_query: str) -> Dict[str, Any]:
         try:
+            # Execute the SQL query using the Data API
             response = self.rds_client.execute_statement(
                 resourceArn=self.cluster_arn,
                 secretArn=self.secret_arn,
@@ -28,6 +31,8 @@ class RDSClient:
                 sql=sql_query,
                 formatRecordsAs='JSON'
             )
+
+            # Parse the JSON response from the Data API into Python objects
             formatted_records = response.get('formattedRecords', [])
             try:
                 parsed_data = json.loads(formatted_records)
@@ -35,6 +40,7 @@ class RDSClient:
                 logger.error(f"Failed to parse JSON: {error}")
                 parsed_data = []
 
+            # Return the results of the query
             return {
                 "success": True,
                 "data": parsed_data,
@@ -60,6 +66,7 @@ class RDSClient:
                 "error": f"Unknown error: {str(error)}"
             }
     
+    # Tests the connection to the RDS instance using a sample query
     def test_connection(self) -> tuple[bool, str]:
         try:
             test_query = "SELECT 1 as test"

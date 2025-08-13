@@ -1,0 +1,6 @@
+# replace YOUR_ACCOUNT_ID and YOUR_CLUSTER_NAME
+AURORA_CLUSTER_ARN=arn:aws:rds:us-east-1:YOUR_ACCOUNT_ID:cluster:YOUR_CLUSTER_NAME
+# replace YOUR_ACCOUNT_ID and YOUR_SECRET_NAME
+AURORA_SECRET_ARN=arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:YOUR_SECRET_NAME
+# if changed here, change in SDK stack too (default name is "postgres")
+DATABASE_NAME=postgres

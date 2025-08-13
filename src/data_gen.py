@@ -15,6 +15,7 @@ client = RDSClient(
     region="us-east-1"
 )
 
+# Used to populate a sample RDS instance with data for testing
 def generate_data():
     query = """
 

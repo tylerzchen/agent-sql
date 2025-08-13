@@ -1,4 +1,4 @@
-
+# Loads the database schema (in SQL format) and returns as a string
 def load_schema():
     try:
         with open('schema.sql', 'r') as file:
@@ -8,8 +8,9 @@ def load_schema():
 
 DATABASE_SCHEMA = load_schema()
 
+# Creates a system prompt for the Bedrock agent using the user's query and the database schema
 def create_system_prompt(user_query: str, schema=DATABASE_SCHEMA):
-    # generated and modified template thru Anthropic console
+    # Generated and modified template through Anthropic console
     SYSTEM_PROMPT = f"""
     You are an AI assistant tasked with converting natural language queries into
     valid SQL statements for a PostgreSQL database. You will be provided with the

@@ -10,6 +10,7 @@ from rds_client import RDSClient
 
 load_dotenv()
 
+# Get environment variables for RDS instance (replace in .env)
 CLUSTER_ARN = os.getenv("AURORA_CLUSTER_ARN")
 SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
 DB_NAME = os.getenv("DATABASE_NAME")
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("sql-agent")
 sql_agent = SQLAgent()
 
+# Test the connection to the RDS instance before starting the MCP server
 connection_success, connection_error = None, None
 try:
     rds_client = RDSClient(cluster_arn=CLUSTER_ARN, secret_arn=SECRET_ARN, db_name=DB_NAME)
@@ -37,6 +39,8 @@ except Exception as error:
     connection_error = f"Failed to connect to RDS: {str(error)}"
     logger.error(f"Failed to connect to RDS: {connection_error}")
 
+# MCP prompt used to generate valid SQL queries given the user's query 
+# (uses the system prompt)
 @mcp.prompt("Generate SQL Query")
 async def generate_sql_query(user_query: str) -> str:
     """Convert a natural language query into a valid SQL query to be executed on the database.
@@ -49,6 +53,8 @@ async def generate_sql_query(user_query: str) -> str:
     """
     return create_system_prompt(user_query=user_query)
 
+# MCP tool used to convert a user's natural language query into a SQL query 
+# (uses the generate_sql_query prompt)
 @mcp.tool()
 async def query_sql_agent(user_query: str) -> str:
     """Convert a natural language query into a valid SQL query to be executed on the database.
@@ -66,6 +72,7 @@ async def query_sql_agent(user_query: str) -> str:
     Args:
         user_query: the natural language query about the database (e.g., "Show me all tickets that are overdue and still unresolved")
     """
+    # Verify the connection to the RDS instance
     if not connection_success:
         logger.error(f"Database connection not available: {connection_error}")
         return json.dumps({
@@ -76,6 +83,7 @@ async def query_sql_agent(user_query: str) -> str:
             "error_type": "connection_error"
         }, indent=2)
     
+    # Generate the system prompt and return it to the MCP client
     try:
         system_prompt = create_system_prompt(user_query=user_query)
         return json.dumps({
@@ -99,6 +107,8 @@ async def query_sql_agent(user_query: str) -> str:
             "generated_sql": None
         }, indent=2)
 
+# MCP tool used to execute a SQL query on the RDS instance and return 
+# the results (uses the generate_sql_query prompt)
 @mcp.tool()
 async def execute_sql_query(sql_query: str, user_query: str = "") -> str:
     """Execute a SQL query on the database and return the results.
@@ -111,6 +121,7 @@ async def execute_sql_query(sql_query: str, user_query: str = "") -> str:
         sql_query: the SQL query to execute on the database
         user_query: the original natural language query that generated the SQL query for context (optional)
     """
+    # Verify the connection to the RDS instance
     if not connection_success:
         logger.error(f"Database connection not available: {connection_error}")
         return json.dumps({
@@ -123,6 +134,7 @@ async def execute_sql_query(sql_query: str, user_query: str = "") -> str:
         }, indent=2)
 
     try:
+        # Validate the generated SQL query from the query_sql_agent tool
         is_valid, error = sql_agent.validate_sql(sql_query)
         if not is_valid:
             logger.error(f"Invalid SQL query: {error}")
@@ -134,6 +146,7 @@ async def execute_sql_query(sql_query: str, user_query: str = "") -> str:
                 "error_type": "security_error"
             }, indent=2)
         
+        # Execute the SQL query on the RDS instance and return the results
         result = rds_client.execute_query(sql_query)
         if not result['success']:
             logger.error(f"Database query failed: {result['error']}")
@@ -148,6 +161,7 @@ async def execute_sql_query(sql_query: str, user_query: str = "") -> str:
                 "error_type": "database_error"
             }, indent=2)
         
+        # Return the results of the SQL query to the MCP client
         return json.dumps({
             "success": True,
             "user_query": user_query,
@@ -168,6 +182,7 @@ async def execute_sql_query(sql_query: str, user_query: str = "") -> str:
             "error_type": "unexpected_error"
         }, indent=2)
 
+# Run the MCP server on local machine using stdio transport
 if __name__ == "__main__":
     logger.info("Starting MCP server...")
     mcp.run(transport="stdio")
