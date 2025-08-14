@@ -154,3 +154,36 @@ def create_system_prompt(user_query: str, schema=DATABASE_SCHEMA):
     """
 
     return SYSTEM_PROMPT
+
+def create_error_prompt(user_query: str, error_context: dict, generated_sql: str = "", schema=DATABASE_SCHEMA):
+    error_title = error_context.get('error_title', 'Unknown Error')
+    error_message = error_context.get('error_message', 'No error details provided')
+    recovery_steps = error_context.get('recovery_steps', [])
+    common_causes = error_context.get('common_causes', [])
+
+    ERROR_PROMPT = f"""
+    ERROR RECOVERY MODE - Fix the specific issue below with generating a SQL query.
+    You will be provided with the user's query, the error message, and the generated SQL query (if available).
+
+    Original User Query: "{user_query}"
+
+    ERROR DETAILS:
+    - Error Type: {error_title}
+    - Error Message: {error_message}
+
+    COMMON CAUSES OF THIS ERROR:
+    {chr(10).join(f"- {cause}" for cause in common_causes)}
+
+    SPECIFIC RECOVERY STEPS:
+    {chr(10).join(f"- {step}" for step in recovery_steps)}
+
+    PREVIOUS SQL GENERATION ATTEMPT (if available):
+    {generated_sql if generated_sql else "No previous SQL query was generated."}
+
+    YOUR TASK: Generate a CORRECTED SQL query that specifically addresses the error above.
+    Focus on fixing the specific issue rather than rewriting the entire query from scratch.
+    """
+
+    BASE_PROMPT = create_system_prompt(user_query=user_query, schema=schema)
+    FULL_PROMPT = ERROR_PROMPT + "\n\n" + BASE_PROMPT
+    return FULL_PROMPT
