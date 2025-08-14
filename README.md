@@ -77,14 +77,14 @@ Claude Desktop (User Query) -> API Gateway -> Lambda Function -> HTTP Adapter ->
 
 ## Installation & Setup
 
-1. Prerequisites
+### 1. Prerequisites
 - **Python 3.10+**
 - **AWS CLI** - configured with appropriate IAM perms and credentials
 - **AWS CDK** - `npm install -g aws-cdk`
 - **Docker**
 - **Git** (optional)
 
-2. Setup and activate the environment
+### 2. Setup and activate the environment
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate # On Windows: .venv/Scripts/activate
@@ -92,7 +92,7 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-3. Configure AWS credentials (CDK)
+### 3. Configure AWS credentials (CDK)
 * Note: this assumes you already the following setup in your CDK stack: Aurora Serverless v2 cluster (Data API enabled), VPC, RDS proxy, and security groups
 * Note: get necessary access key values from your console, and make sure the target regions match (won't work otherwise)
 ```bash
@@ -107,13 +107,13 @@ aws lambda list-functions
 aws cloudformation list-stacks
 ```
 
-4. Edit database schema and system prompt if needed
+### 4. Edit database schema and system prompt if needed
 - DB schema: **src/schema.sql**
 - System prompt: **src/prompt.py**
 - Ensure Aurora cluster is running, and RDS instance is active
 - Confirm RDS Data API is enabled on the cluster
 
-5. Test MCP server locally (Claude Desktop)
+### 5. Test MCP server locally (Claude Desktop)
 - Start the server ->
 ```bash
 cd src
@@ -122,7 +122,7 @@ python3 mcp_server.py
 - Verify its running, and then replace the contents of the Developer config file (Claude Desktop -> Settings -> Developer -> Local MCP Server -> Edit Config) with the contents of the **config/mcp_client_config_stdio.json** file (replace file paths to your own paths in the "command" and "args" props)
 - The tools should show up and activate when you run a prompt in Claude now
 
-6. Test HTTP adapter locally (curl)
+### 6. Test HTTP adapter locally (curl)
 - Start the server -> 
 ```bash
 cd src
@@ -185,7 +185,7 @@ curl -X POST http://localhost:8000/prompts/call \
 
 ## Deployment (Lambda)
 
-1. Verify CDK stack setup, environment variables, and Docker setup
+### 1. Verify CDK stack setup, environment variables, and Docker setup
 ```bash
 # Check that environment variables are loaded
 python3 -c "import os; print('AURORA_CLUSTER_ARN:', os.getenv('AURORA_CLUSTER_ARN'))"
@@ -211,25 +211,25 @@ docker run --rm mcp-lambda ls -la
 docker run --rm mcp-lambda python3 -c "import os; print('Working directory:', os.getcwd()); print('Files:', os.listdir('.'))"
 ```
 
-2. Bootstrap CDK
+### 2. Bootstrap CDK
 ```bash
 # Bootstrap CDK in your AWS account/region (first time only)
 cdk bootstrap
 ```
 
-3. Deploy infrastructure
+### 3. Deploy infrastructure
 ```bash
 # Deploy the complete stack
 cdk deploy
 ```
 
-4. Get the API gateway endpoint
+### 4. Get the API gateway endpoint
 - After successful deployment, CDK will output the endpoints -> 
 - AgentSqlStack.MCPApiGatewayEndpoint = https://abc123.execute-api.us-east-1.amazonaws.com/prod/
 - AgentSqlStack.AuroraClusterEndpoint = your-aurora-cluster.cluster-xyz.us-east-1.rds.amazonaws.com
 - AgentSqlStack.RDSProxyEndpoint = your-proxy.proxy-xyz.us-east-1.rds.amazonaws.com
 
-5. Test the API gateway endpoint (curl)
+### 5. Test the API gateway endpoint (curl)
 ```bash
 # GET /health
 curl http://{your_API_gateway_URL}/health
