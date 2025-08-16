@@ -4,7 +4,7 @@ import re
 import boto3
 from botocore.exceptions import ClientError
 import sqlparse
-from sqlparse.tokens import Keyword
+from sqlparse.tokens import Keyword, DML, Punctuation
 
 from prompt import create_system_prompt
 
@@ -71,53 +71,82 @@ class SQLAgent:
 
     # Validates the SQL query to ensure it is safe and follows SQL syntax
     def validate_sql(self, sql_query: str) -> tuple[bool, str]:
-        try:
-            # Parse the SQL query from text
-            parsed = sqlparse.parse(sql_query)
-            if not parsed:
-                return False, "Empty or invalid SQL query"
-            
-            # Check if the query is a SELECT statement
-            statement = parsed[0]
-            tokens = statement.tokens
-            found_select = False
-            for token in tokens:
-                if (token.ttype is Keyword or str(token.ttype).startswith('Token.Keyword')) and token.value.upper() == 'SELECT':
-                    found_select = True
-                    break
-            if not found_select:
-                return False, "Only SELECT queries are allowed for security"
-            
-            # Check for forbidden SQL operations
-            forbidden_patterns = [
-                r'\bCREATE\s+TABLE\b',
-                r'\bCREATE\s+DATABASE\b',  
-                r'\bCREATE\s+INDEX\b',
-                r'\bDROP\b', r'\bDELETE\b', r'\bTRUNCATE\b', r'\bALTER\b',
-                r'\bINSERT\b', r'\bUPDATE\b', r'\bGRANT\b', r'\bREVOKE\b'
-            ]
-            sql_upper = sql_query.upper()
-            for pattern in forbidden_patterns:
-                if re.search(pattern, sql_upper):
-                    return False, f"Forbidden SQL operation detected: {pattern}"
-            
-            # Check for dangerous SQL patterns
-            dangerous_patterns = [
-                ';--', ';/*', 'UNION', 'INFORMATION_SCHEMA', 
-                'pg_catalog', 'pg_stat', 'DROP', 'CREATE'
-            ]
-            for pattern in dangerous_patterns:
-                if pattern in sql_upper:
-                    return False, f"Potentially dangerous SQL pattern detected: {pattern}"
+        PROHIBITED_KEYWORDS = [
+            "INSERT", "UPDATE", "DELETE", "MERGE", "UPSERT", "REPLACE",
+            "DROP", "ALTER", "CREATE", "TRUNCATE", "GRANT", "REVOKE",
+            "CALL", "EXEC", "EXECUTE", "UNION", "INTERSECT", "EXCEPT", "MINUS",
+            "BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "COPY", 
+            "LOAD", "IMPORT", "EXPORT",
+        ]
+        PROHIBITED_SELECT_KEYWORDS = ["INTO"]
+        DISALLOWED_SCHEMAS = [
+            "INFORMATION_SCHEMA", "PG_CATALOG", "PG_TOAST", "PG_TEMP", "PG_TOAST_TEMP"
+        ]
+        DISALLOWED_TABLE_PREFIXES = ["PG_STAT"]
 
-            # Format the SQL query to ensure it is valid
-            try:
-                formatted = sqlparse.format(sql_query, reindent=True)
-                if not formatted.strip():
-                    return False, "SQL query is empty after formatting"
-            except Exception as e:
-                return False, f"SQL syntax error: {str(e)}"
-            
-            return True, None
-        except Exception as e:
-            return False, f"SQL validation error: {str(e)}"
+        if not isinstance(sql_query, str) or not sql_query.strip():
+            return False, "Empty or invalid SQL string"
+
+        statements = [s for s in sqlparse.parse(sql_query) if s.tokens and not s.is_whitespace]
+        if not statements:
+            return False, "Empty or invalid SQL query"
+        if len(statements) != 1:
+            return False, "Multiple statements are not allowed"
+        stmt = statements[0]
+
+        flat = []
+        stack = list(stmt.tokens)
+        while stack:
+            t = stack.pop(0)
+            if getattr(t, "is_group", False):
+                stack = list(t.tokens) + stack
+            else:
+                flat.append(t)
+
+        if (stmt.get_type() or "").upper() != "SELECT":
+            return False, "Only SELECT queries are allowed"
+
+        for t in flat:
+            if (t.ttype in (Keyword, DML)) or str(t.ttype).startswith("Token.Keyword"):
+                if t.value.upper() in PROHIBITED_KEYWORDS:
+                    return False, "Query contains prohibited keywords (DDL/DML/set operations)"
+        
+        saw_select = False
+        before_from = True
+        for t in flat:
+            if (t.ttype in (Keyword, DML)) or str(t.ttype).startswith("Token.Keyword"):
+                val = t.value.upper()
+                if val == "SELECT":
+                    saw_select = True
+                elif val == "FROM":
+                    before_from = False
+                elif saw_select and before_from and val in PROHIBITED_SELECT_KEYWORDS:
+                    return False, "SELECT INTO is not allowed"
+
+        mid_semicolon = any(t.ttype is Punctuation and t.value == ";" for t in flat)
+        if mid_semicolon and not sql_query.strip().endswith(";"):
+            return False, "Semicolons in the middle of the query are not allowed"
+        
+        sql_up = sql_query.upper()
+        from_like_patterns = [
+            r"\bFROM\s+(?:ONLY\s+)?(?P<obj>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)",
+            r"\bJOIN\s+(?:ONLY\s+)?(?P<obj>(?:\"[^\"]+\"|\w+)(?:\.(?:\"[^\"]+\"|\w+))?)",
+        ]
+        for pat in from_like_patterns:
+            for m in re.finditer(pat, sql_up):
+                obj = m.group("obj").strip()
+                parts = [p[1:-1] if len(p) >= 2 and p[0] == '"' and p[-1] == '"' else p for p in obj.split(".")]
+                parts = [p.strip() for p in parts if p.strip()]
+                if not parts:
+                    continue
+
+                if len(parts) >= 2:
+                    schema = parts[0]
+                    if schema in DISALLOWED_SCHEMAS or schema.startswith("PG_"):
+                        return False, f"Access to schema '{schema}' is not allowed"
+                else:
+                    tbl = parts[0]
+                    if any(tbl.startswith(prefix) for prefix in DISALLOWED_TABLE_PREFIXES):
+                        return False, f"Access to table '{tbl}' is not allowed"
+        
+        return True, None
